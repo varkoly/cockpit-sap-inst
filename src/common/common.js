@@ -10,24 +10,26 @@ const contains_spec_chars = /[\!\@\#\$\%\^\&\*\(\)\_\+]/
 const starts_with_bad = /^[!?]/
 
 
-export function readSapInstallations(sapData, updateNestedSapData) {
+export function readSapInstallations() {
+    let tmp = []
     cockpit.file("/usr/sap/sapservices", { superuser: "require" }).read().then((content, tag) => {
         if (content != null) {
-            let tmp = []
             for (var line of content.split("\n")) {
                 var fields = line.split(" ");
                 if (fields.length > 3) {
                     tmp.push({ sid: fields[3].slice(3, 6), instNumber: fields[3].slice(7, 9) })
                 }
             }
-            updateNestedSapData("installations", tmp)
         }
-    }).catch(error => { })
+    }).catch(error => {
+        console.log(error)
+    })
+    return tmp
 }
 
 export function isValidIP(IP) {
 
-    if(!IP)
+    if (!IP)
         return false;
 
     // Regex expression for validating IPv4
@@ -74,7 +76,7 @@ export function checkSid(value, setSidValidated, setSidHelperText, sapData) {
         setSidHelperText(_("The SID needs to start with a letter."))
         return
     }
-    if( sapData.installations.filter((inst, rowIndex) => { return inst.sid == value}).length > 0 ) {
+    if (sapData.installations.filter((inst, rowIndex) => { return inst.sid == value }).length > 0) {
         setSidValidated('error')
         setSidHelperText(_("The SID is already used."))
         return

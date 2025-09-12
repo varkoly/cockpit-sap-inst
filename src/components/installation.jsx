@@ -48,11 +48,11 @@ firewalld.call("/org/fedoraproject/FirewallD1", "org.fedoraproject.FirewallD1.zo
     .then((info) => { console.log(info) })
     .catch((err) => { console.log(err) })
 
-export const Installation = () => {
-
+export const Installation = (props) => {
 
     const { sapData, updateNestedSapData } = useContext(SapDataContext);
     const [instLog, setInstLog] = React.useState('')
+    console.log(sapData)
 
     /** Handling of SID */
     const [sidValidated, setSidValidated] = React.useState(ValidatedOptions.default);
@@ -132,6 +132,7 @@ export const Installation = () => {
     * Variable handling for the installtions media for HANA and SAP product(s)
     */
     const [hanaUrlValidated, setHanaUrlValidated] = React.useState(ValidatedOptions.default)
+    const [productUrlValidated, setProductUrlValidated] = React.useState(ValidatedOptions.default)
     const [hanaUrlPathPlaceholder, setHanaUrlPathPlaceholder] = React.useState('');
     const [productUrlPathPlaceholder, setProductUrlPathPlaceholder] = React.useState('');
     const handleHanaUrlProtocol = (_event, value) => {
@@ -161,10 +162,20 @@ export const Installation = () => {
             case 'nfs://': setProductUrlPathPlaceholder("nfs.server/path"); break;
             case 'smb://': setProductUrlPathPlaceholder("[[domain;]username[:password]@]samba.server/share/path"); break;
         }
-        updateNestedSapData('installation.productlUrlProtocol', value)
+        updateNestedSapData('installation.productUrlProtocol', value)
+        if (sapData.installation.productUrlPath.length > 3 && sapData.installation.productUrlPath.includes('/')) {
+            setProductUrlValidated('success')
+        } else {
+            setProductUrlValidated('error')
+        }
     }
     const handleProductUrlPath = (_event, value) => {
         updateNestedSapData('installation.productUrlPath', value)
+        if (value.length > 3 && value.includes('/') && sapData.installation.productUrlProtocol.includes('//')) {
+            setProductUrlValidated('success')
+        } else {
+            setProductUrlValidated('error')
+        }
     }
     const urlProtocols = [
         { value: '', label: _('Select the URL protocol.'), disabled: true, isPlaceholder: true },
@@ -203,27 +214,9 @@ export const Installation = () => {
         updateNestedSapData('processes.installation', null)
         watch_handle.remove();
         cockpit.spawn(["rm", "-f", sapData.installation.logFile], { superuser: "require" })
-        updateNestedSapData('installation.logFile',"")
+        updateNestedSapData('installation.logFile', "")
         setInstLog('')
     }
-
-    // First lets have a look if there is an installation running
-    React.useEffect(() => {
-        console.log("Installation useEffect called", sapData.installation)
-        if (sapData.installation.logFile.length > 0) {
-            watch_handle = cockpit.file(sapData.installation.logFile, { superuser: "require" }).watch((content) => {
-                if (content != null) setInstLog(content)
-            })
-        }
-        if (sapData.processes.installation) {
-            sapData.processes.installation.then((value) => {
-                updateNestedSapData('installation.result', value)
-            }).catch((error, value) => {
-                updateNestedSapData('installation.result', value)
-                console.log(error)
-            })
-        }
-    }, [])
 
     const startInstallation = () => {
         cockpit.spawn(['mktemp', '/run/sapinst-XXXXXXXXXX.log'], { superuser: "require", err: "message" }).then(
@@ -270,6 +263,7 @@ export const Installation = () => {
         )
     }
 
+
     /*
     * Show the result of the SAP installation
     */
@@ -284,6 +278,64 @@ export const Installation = () => {
         )
     }
 
+    const SelectHardDisk = () => {
+        return (
+            <FormGroup
+                label={_("Harddisk")}
+                labelHelp={
+                    <Popover
+                        headerContent={<div>{_("Select the Harddisk where SAP componenets will be installed.")}</div>}
+                        bodyContent={<div>{_("The components of SAP products will be installed in different directories on the filesystem:")}<br />
+                            <pre>/hana/data /hana/log/
+                                /hana/shared /usr/sap ..</pre>
+                            {_("If you select a free device a LVM containing this directories will be created on it with appropriate size.")}<br />
+                            {_("If your hardware partner provides a predefined partitioning this will be applied automaticaly.")}<br />
+                            {_("If your do not select any device the SAP components will be installed on the root filesystem.")}
+                        </div>}>
+                        <Button variant='link' aria-label="More info for harddisk field" onClick={e => e.preventDefault()} className={styles.formGroupLabelHelp}>
+                            <HelpIcon />
+                        </Button>
+                    </Popover>
+                }>
+                {
+                    (disks.freeSlots.length > 1) ?
+                        <FormSelect value={sapData.installation.selectedDevice} onChange={handleSelectedDevice} id="sap-inst-device">
+                            {disks.freeSlots.map((option, index) => <FormSelectOption key={index} value={option.name} label={option.label} isPlaceholder={option.isPlaceholder} />)}
+                        </FormSelect>
+                        :
+                        <Alert isExpandable variant="warning" title={_('No usable hard disk found.')}>
+                            <p>{_("The installation can be started. The SAP products will be in into the root filesystem.")}</p>
+                        </Alert>
+                }
+            </FormGroup>
+        )
+    }
+
+    const SetHosts = () => {
+        if (props.os.NAME == "SLES") {
+            //updateNestedSapData('installation.hosts','localhost')
+            return ""
+        } else {
+            return (
+                <FormGroup
+                    label={_("Servers on which the SAP components must be installed")}
+                    labelHelp={
+                        <Popover
+                            headerContent={<div>{_("Servers on which the SAP components must be installed")}</div>}
+                            bodyContent={<div>{_("Provide a space separated lists of hosts on which the SAP Components need to be installed.")}<br />
+                                {_("You have to provide at least one host. You can provide dns names or ip adresses.")}<br />
+                                {_("The servers must be accessible as 'root' via ssh, preferably without a password.")}<br />
+                            </div>}>
+                            <Button variant='link' aria-label="More info for hosts field" onClick={e => e.preventDefault()} aria-describedby="simple-form-name-01" className={styles.formGroupLabelHelp}>
+                                <HelpIcon />
+                            </Button>
+                        </Popover>
+                    }>
+                    <TextInput isRequired={true} type="text" id="sap-hosts" value={sapData.installation.hosts} onChange={handleHosts}></TextInput>
+                </FormGroup>
+            )
+        }
+    }
 
     const InstallationsMask = () => {
         return (
@@ -381,56 +433,21 @@ export const Installation = () => {
                     </GridItem>
                     <GridItem span={3}>
                         <FormGroup label={_("Protocol")} role="group">
-                            <FormSelect value={sapData.installation.productUrlProtocol} onChange={handleProductUrlProtocol} id="sap-url-protocol">
+                            <FormSelect validated={productUrlValidated} value={sapData.installation.productUrlProtocol} onChange={handleProductUrlProtocol} id="sap-url-protocol">
                                 {urlProtocols.map((option, index) => <FormSelectOption isDisabled={option.disabled} key={index} value={option.value} label={option.label} />)}
                             </FormSelect>
                         </FormGroup>
                     </GridItem>
                     <GridItem span={9}>
                         <FormGroup label={_("Path")}>
-                            <TextInput isRequired={true} type="text" id="sap-url-path" value={sapData.installation.productUrlPath} onChange={handleProductUrlPath} placeholder={productUrlPathPlaceholder}></TextInput>
+                            <TextInput validated={productUrlValidated}  type="text" id="sap-url-path" value={sapData.installation.productUrlPath} onChange={handleProductUrlPath} placeholder={productUrlPathPlaceholder}></TextInput>
                         </FormGroup>
                     </GridItem>
                     <GridItem span={6}>
-                        <FormGroup
-                            label={_("Harddisk")}
-                            labelHelp={
-                                <Popover
-                                    headerContent={<div>{_("Select the Harddisk where SAP componenets will be installed.")}</div>}
-                                    bodyContent={<div>{_("The components of SAP products will be installed in different directories on the filesystem:")}<br />
-                                        <pre>/hana/data /hana/log/
-                                            /hana/shared /usr/sap ..</pre>
-                                        {_("If you select a free device a LVM containing this directories will be created on it with appropriate size.")}<br />
-                                        {_("If your hardware partner provides a predefined partitioning this will be applied automaticaly.")}<br />
-                                        {_("If your do not select any device the SAP components will be installed on the root filesystem.")}
-                                    </div>}>
-                                    <Button variant='link' aria-label="More info for harddisk field" onClick={e => e.preventDefault()} className={styles.formGroupLabelHelp}>
-                                        <HelpIcon />
-                                    </Button>
-                                </Popover>
-                            }>
-                            <FormSelect value={sapData.installation.selectedDevice} onChange={handleSelectedDevice} id="sap-inst-device">
-                                {disks.freeSlots.map((option, index) => <FormSelectOption key={index} value={option.name} label={option.label} isPlaceholder={option.isPlaceholder} />)}
-                            </FormSelect>
-                        </FormGroup>
+                        <SelectHardDisk />
                     </GridItem>
                     <GridItem span={6}>
-                        <FormGroup
-                            label={_("Servers on which the SAP components must be installed")}
-                            labelHelp={
-                                <Popover
-                                    headerContent={<div>{_("Servers on which the SAP components must be installed")}</div>}
-                                    bodyContent={<div>{_("Provide a space separated lists of hosts on which the SAP Components need to be installed.")}<br />
-                                        {_("You have to provide at least one host. You can provide dns names or ip adresses.")}<br />
-                                        {_("The servers must be accessible as 'root' via ssh, preferably without a password.")}<br />
-                                    </div>}>
-                                    <Button variant='link' aria-label="More info for hosts field" onClick={e => e.preventDefault()} aria-describedby="simple-form-name-01" className={styles.formGroupLabelHelp}>
-                                        <HelpIcon />
-                                    </Button>
-                                </Popover>
-                            }>
-                            <TextInput isRequired={true} type="text" id="sap-hosts" value={sapData.installation.hosts} onChange={handleHosts}></TextInput>
-                        </FormGroup>
+                        <SetHosts />
                     </GridItem>
                     <ActionGroup>
                         <Button onClick={startInstallation} variant="primary"
